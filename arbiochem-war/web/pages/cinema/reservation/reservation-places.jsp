@@ -1,202 +1,174 @@
 <%@ page pageEncoding="UTF-8" contentType="text/html; charset=UTF-8" %>
 <%@ page import="cinema.PlaceSeanceDispo" %>
-<%@ page import="service.PlanSalleService" %>
+<%@ page import="cinema.ReservationService" %>
+<%@ page import="cinema.SeanceLib" %>
+<%@ page import="bean.CGenUtil" %>
 <%@ page import="user.UserEJB" %>
+<%@ page import="utilitaire.UtilDB" %>
+<%@ page import="java.sql.Connection" %>
 <%@ page import="java.text.SimpleDateFormat" %>
+<%@ page import="java.util.ArrayList" %>
 <%@ page import="java.util.LinkedHashMap" %>
 <%@ page import="java.util.List" %>
-<%@ page import="java.util.ArrayList" %>
 <%@ page import="java.util.Locale" %>
 <%@ page import="java.util.Map" %>
 
 <%!
-    /** Échappe une valeur avant de l'écrire dans le HTML. */
     private static String h(String s) {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;").replace("'", "&#39;");
     }
+    private static String param(javax.servlet.http.HttpServletRequest request, String a, String b) {
+        String value = request.getParameter(a);
+        return value == null ? request.getParameter(b) : value;
+    }
 %>
-
 <%
     UserEJB utilisateur = (UserEJB) session.getAttribute("u");
-    String idClient = request.getParameter("idclient");
-    String idSeance = request.getParameter("idseance");
-    String idMode = request.getParameter("idmodepaiement_prevu");
-    String delaiExpirationMinutes = request.getParameter("delai_expiration_minutes");
-
+    String idClient = param(request, "idClient", "idclient");
+    String idSeance = param(request, "idSeance", "idseance");
+    String dateExpiration = param(request, "dateExpiration", "dateexpiration");
     String erreur = null;
     PlaceSeanceDispo[] places = new PlaceSeanceDispo[0];
-    Map<String, List<PlaceSeanceDispo>> parRangee = new LinkedHashMap<String, List<PlaceSeanceDispo>>();
+    SeanceLib seance = null;
+    Map<String, List<PlaceSeanceDispo>> rangees = new LinkedHashMap<String, List<PlaceSeanceDispo>>();
     Map<String, String[]> categories = new LinkedHashMap<String, String[]>();
-    int nombreLibres = 0;
+    int placesDisponibles = 0;
 
-    if (utilisateur == null) {
-        erreur = "La session utilisateur a expiré. Reconnectez-vous.";
-    } else if (idClient == null || idClient.trim().isEmpty()
-            || idSeance == null || idSeance.trim().isEmpty()) {
-        erreur = "Choisissez d'abord un client et une séance.";
-    } else {
-        try {
-            places = PlanSalleService.listerPlacesSeance(idSeance);
-            if (places.length == 0) {
-                erreur = "Aucune place n'est définie pour la salle de cette séance.";
-            }
-            for (PlaceSeanceDispo place : places) {
-                String rangee = place.getRangee() == null ? "" : place.getRangee();
-                List<PlaceSeanceDispo> ligne = parRangee.get(rangee);
-                if (ligne == null) {
-                    ligne = new ArrayList<PlaceSeanceDispo>();
-                    parRangee.put(rangee, ligne);
-                }
-                ligne.add(place);
-                String idCat = place.getIdcategorieplace();
-                if (idCat != null && !categories.containsKey(idCat)) {
-                    categories.put(idCat, new String[] {
-                        place.getIdcategorieplacelib(),
-                        String.format(Locale.FRANCE, "%,.0f", place.getPrix_base()),
-                        String.valueOf(categories.size() % 6)
-                    });
-                }
-                if (place.getDisponible() == 1) nombreLibres++;
-            }
-        } catch (Exception e) {
-            erreur = "Impossible de charger le plan de la salle.";
-            application.log("Erreur lors du chargement du plan de reservation-places.jsp", e);
+    try {
+        if (utilisateur == null) throw new IllegalStateException("La session utilisateur a expiré. Reconnectez-vous.");
+        if (idClient == null || idClient.trim().isEmpty()) throw new IllegalArgumentException("Choisissez un client.");
+        if (idSeance == null || idSeance.trim().isEmpty()) throw new IllegalArgumentException("Choisissez une séance.");
+        places = ReservationService.listerPlaces(idSeance.trim());
+        try (Connection c = new UtilDB().GetConn()) {
+            Object[] seances = CGenUtil.rechercher(new SeanceLib(), null, null, c,
+                    " AND ID = '" + idSeance.trim().replace("'", "''") + "'");
+            if (seances.length > 0) seance = (SeanceLib) seances[0];
         }
-    }
+        if (seance == null) throw new IllegalArgumentException("La séance sélectionnée est introuvable.");
+        if (places.length == 0) throw new IllegalArgumentException("Aucune place n'est définie pour cette séance.");
 
+        for (PlaceSeanceDispo place : places) {
+            String idCategorie = place.getIdCategorie();
+            String nomCategorie = place.getIdCategorieLib() == null ? "Sans catégorie" : place.getIdCategorieLib();
+            if (!categories.containsKey(idCategorie)) {
+                categories.put(idCategorie, new String[] {
+                    nomCategorie,
+                    String.format(Locale.FRANCE, "%,.0f", place.getPrix()),
+                    String.valueOf(categories.size() % 6)
+                });
+            }
+            // Le schéma n'a pas de colonne rangée : une catégorie représente une rangée.
+            List<PlaceSeanceDispo> rangee = rangees.get(nomCategorie);
+            if (rangee == null) {
+                rangee = new ArrayList<PlaceSeanceDispo>();
+                rangees.put(nomCategorie, rangee);
+            }
+            rangee.add(place);
+            if (place.getDisponible() == 1) placesDisponibles++;
+        }
+    } catch (Exception e) {
+        erreur = e.getMessage() == null ? "Impossible de charger le plan de la salle." : e.getMessage();
+        application.log("Erreur lors du chargement du plan des places de réservation.", e);
+    }
     SimpleDateFormat formatDate = new SimpleDateFormat("dd/MM/yyyy 'à' HH:mm");
 %>
 
 <style>
-    .plan-ecran { text-align: center; margin: 15px auto 25px; padding: 6px; max-width: 60%;
-                  background: #ddd; border-radius: 0 0 40px 40px; font-weight: bold; letter-spacing: 4px; }
-    .plan-rangee { display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
-    .plan-rangee-nom { width: 32px; font-weight: bold; text-align: center; }
-    .plan-place { position: relative; margin: 0 3px; }
-    .plan-place input { position: absolute; opacity: 0; width: 0; height: 0; }
-    .plan-place label { display: block; min-width: 42px; padding: 6px 4px; margin: 0; text-align: center;
-                        border-radius: 6px 6px 3px 3px; border: 2px solid transparent; font-size: 12px;
-                        color: #fff; cursor: pointer; }
-    .plan-place .cat0 { background: #3c8dbc; } .plan-place .cat1 { background: #d4a017; }
-    .plan-place .cat2 { background: #00a65a; } .plan-place .cat3 { background: #8e44ad; }
-    .plan-place .cat4 { background: #e67e22; } .plan-place .cat5 { background: #16a085; }
-    .plan-place input:checked + label { border-color: #222; box-shadow: 0 0 0 2px #fff inset; font-weight: bold; }
-    .plan-place input:disabled + label { background: #c7c7c7; color: #777; cursor: not-allowed; text-decoration: line-through; }
-    .plan-legende span { display: inline-block; margin-right: 18px; }
-    .plan-puce { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
-    .plan-puce.cat0 { background: #3c8dbc; } .plan-puce.cat1 { background: #d4a017; }
-    .plan-puce.cat2 { background: #00a65a; } .plan-puce.cat3 { background: #8e44ad; }
-    .plan-puce.cat4 { background: #e67e22; } .plan-puce.cat5 { background: #16a085; }
-    .plan-puce.occupee { background: #c7c7c7; }
-    .plan-resume { margin-top: 20px; font-size: 16px; }
+    .plan-ecran { text-align:center; margin:18px auto 28px; padding:7px; max-width:60%; background:#ddd;
+                  border-radius:0 0 40px 40px; font-weight:bold; letter-spacing:4px; }
+    .plan-rangee { display:flex; align-items:center; justify-content:center; margin-bottom:9px; flex-wrap:wrap; }
+    .plan-rangee-nom { width:110px; font-weight:bold; text-align:right; padding-right:12px; }
+    .plan-place { position:relative; margin:0 3px; }
+    .plan-place input { position:absolute; opacity:0; width:0; height:0; }
+    .plan-place label { display:block; min-width:42px; padding:6px 4px; margin:0; text-align:center;
+                        border-radius:6px 6px 3px 3px; border:2px solid transparent; font-size:12px;
+                        color:#fff; cursor:pointer; }
+    .cat0 { background:#3c8dbc; } .cat1 { background:#d4a017; } .cat2 { background:#00a65a; }
+    .cat3 { background:#8e44ad; } .cat4 { background:#e67e22; } .cat5 { background:#16a085; }
+    .plan-place input:checked + label { border-color:#222; box-shadow:0 0 0 2px #fff inset; font-weight:bold; }
+    .plan-place input:disabled + label { background:#c7c7c7; color:#777; cursor:not-allowed; text-decoration:line-through; }
+    .plan-legende span { display:inline-block; margin:0 16px 8px 0; }
+    .plan-puce { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; margin-right:4px; }
+    .plan-resume { margin-top:20px; font-size:16px; }
 </style>
 
 <div class="content-wrapper">
-    <section class="content-header">
-        <h1>Choisir les places</h1>
-    </section>
-
+    <section class="content-header"><h1>Choisir les places</h1></section>
     <section class="content">
         <% if (erreur != null) { %>
             <div class="alert alert-danger"><%= h(erreur) %></div>
-            <a class="btn btn-default" href="module.jsp?but=reservation/reservation-saisie.jsp">Retour</a>
-        <% } else {
-            PlaceSeanceDispo premiere = places[0];
-        %>
+            <a class="btn btn-default" href="module.jsp?but=cinema/reservation/reservation-saisie.jsp">Retour</a>
+        <% } else { %>
             <div class="box box-primary">
                 <div class="box-header with-border">
-                    <h3 class="box-title">
-                        <%= h(premiere.getIdfilmlib()) %> &mdash; <%= h(premiere.getIdsallelib()) %>
-                        <% if (premiere.getDateheure_debut() != null) { %>
-                            &mdash; <%= formatDate.format(premiere.getDateheure_debut()) %>
-                        <% } %>
-                    </h3>
+                    <h3 class="box-title"><%= h(seance.getLibelle()) %></h3>
+                    <p>Début : <%= seance.getDateHeureDebut() == null ? "" : formatDate.format(seance.getDateHeureDebut()) %>
+                       &mdash; fin : <%= seance.getDateHeureFin() == null ? "" : formatDate.format(seance.getDateHeureFin()) %></p>
                 </div>
-
-                <form action="module.jsp?but=reservation/apres-reservation.jsp" method="post">
-                    <input type="hidden" name="idclient" value="<%= h(idClient) %>">
-                    <input type="hidden" name="idseance" value="<%= h(idSeance) %>">
-                    <input type="hidden" name="idmodepaiement_prevu" value="<%= h(idMode) %>">
-                    <input type="hidden" name="delai_expiration_minutes" value="<%= h(delaiExpirationMinutes) %>">
-                    <input type="hidden" name="bute" value="reservation/reservation-liste.jsp">
-
+                <form action="module.jsp?but=cinema/reservation/apres-reservation.jsp" method="post">
+                    <input type="hidden" name="idClient" value="<%= h(idClient) %>">
+                    <input type="hidden" name="idSeance" value="<%= h(idSeance) %>">
+                    <input type="hidden" name="dateExpiration" value="<%= h(dateExpiration) %>">
+                    <input type="hidden" name="acte" value="insert">
+                    <input type="hidden" name="bute" value="cinema/reservation/reservation-liste.jsp">
+                    <input type="hidden" name="classe" value="cinema.Reservation">
+                    <input type="hidden" name="nomtable" value="CINE_RESERVATION">
                     <div class="box-body">
                         <div class="plan-legende">
                             <% for (String[] categorie : categories.values()) { %>
-                                <span><i class="plan-puce cat<%= categorie[2] %>"></i>
-                                    <%= h(categorie[0]) %> &ndash; <%= categorie[1] %></span>
+                                <span><i class="plan-puce cat<%= categorie[2] %>"></i><%= h(categorie[0]) %> &mdash; <%= categorie[1] %></span>
                             <% } %>
-                            <span><i class="plan-puce occupee"></i>Indisponible</span>
+                            <span><i class="plan-puce" style="background:#c7c7c7"></i>Indisponible</span>
                         </div>
-
-                        <div class="plan-ecran">&Eacute;CRAN</div>
-
-                        <% for (Map.Entry<String, List<PlaceSeanceDispo>> ligne : parRangee.entrySet()) { %>
+                        <div class="plan-ecran">ÉCRAN</div>
+                        <% for (Map.Entry<String, List<PlaceSeanceDispo>> rangee : rangees.entrySet()) { %>
                             <div class="plan-rangee">
-                                <span class="plan-rangee-nom"><%= h(ligne.getKey()) %></span>
-                                <% for (PlaceSeanceDispo place : ligne.getValue()) {
-                                    boolean libre = place.getDisponible() == 1;
-                                    String[] categorie = categories.get(place.getIdcategorieplace());
-                                    String classe = categorie == null ? "cat0" : "cat" + categorie[2];
-                                    String identifiant = "place_" + h(place.getIdplace());
-                                    String titre = libre ? "Disponible"
-                                            : "Indisponible (" + h(place.getStatut_occupation()) + ")";
+                                <span class="plan-rangee-nom"><%= h(rangee.getKey()) %></span>
+                                <% for (PlaceSeanceDispo place : rangee.getValue()) {
+                                    boolean disponible = place.getDisponible() == 1;
+                                    String[] categorie = categories.get(place.getIdCategorie());
+                                    String couleur = categorie == null ? "cat0" : "cat" + categorie[2];
+                                    String inputId = "place_" + place.getIdPlace().replaceAll("[^A-Za-z0-9_-]", "_");
                                 %>
                                     <span class="plan-place">
-                                        <input type="checkbox" name="places" id="<%= identifiant %>"
-                                               value="<%= h(place.getIdplace()) %>"
-                                               data-prix="<%= place.getPrix_base() %>"
-                                               <%= libre ? "" : "disabled" %>>
-                                        <label for="<%= identifiant %>" class="<%= classe %>"
-                                               title="<%= titre %>"><%= h(place.getNumero()) %></label>
+                                        <input type="checkbox" id="<%= inputId %>" name="places" value="<%= h(place.getIdPlace()) %>"
+                                               data-prix="<%= place.getPrix() %>" <%= disponible ? "" : "disabled" %>>
+                                        <label for="<%= inputId %>" class="<%= couleur %>"
+                                               title="<%= disponible ? "Disponible" : "Indisponible" %>"><%= h(place.getNumero()) %></label>
                                     </span>
                                 <% } %>
                             </div>
                         <% } %>
-
-                        <% if (nombreLibres == 0) { %>
-                            <div class="alert alert-warning" style="margin-top:20px;">
-                                Il ne reste aucune place disponible pour cette séance.
-                            </div>
+                        <% if (placesDisponibles == 0) { %>
+                            <div class="alert alert-warning">Il ne reste aucune place disponible pour cette séance.</div>
                         <% } %>
-
-                        <div class="plan-resume">
-                            <strong id="nbPlaces">0</strong> place(s) s&eacute;lectionn&eacute;e(s)
-                            &mdash; total : <strong id="totalPlaces">0</strong>
-                        </div>
+                        <div class="plan-resume"><strong id="nbPlaces">0</strong> place(s) sélectionnée(s)
+                            &mdash; total : <strong id="totalPlaces">0</strong></div>
                     </div>
-
                     <div class="box-footer">
-                        <a class="btn btn-default" href="module.jsp?but=reservation/reservation-saisie.jsp">Retour</a>
-                        <button type="submit" id="btnReserver" class="btn btn-primary" disabled>
-                            Valider la r&eacute;servation
-                        </button>
+                        <a class="btn btn-default" href="module.jsp?but=cinema/reservation/reservation-saisie.jsp">Retour</a>
+                        <button type="submit" id="btnReserver" class="btn btn-primary" disabled>Enregistrer la réservation</button>
                     </div>
                 </form>
             </div>
-
             <script>
                 (function () {
                     var cases = document.querySelectorAll('.plan-place input[type=checkbox]');
-                    var nb = document.getElementById('nbPlaces');
-                    var total = document.getElementById('totalPlaces');
+                    var nb = document.getElementById('nbPlaces'), total = document.getElementById('totalPlaces');
                     var bouton = document.getElementById('btnReserver');
-                    function maj() {
+                    function actualiser() {
                         var n = 0, somme = 0;
-                        for (var i = 0; i < cases.length; i++) {
-                            if (cases[i].checked) {
-                                n++;
-                                somme += parseFloat(cases[i].getAttribute('data-prix')) || 0;
-                            }
+                        for (var i = 0; i < cases.length; i++) if (cases[i].checked) {
+                            n++; somme += parseFloat(cases[i].getAttribute('data-prix')) || 0;
                         }
                         nb.textContent = n;
                         total.textContent = somme.toLocaleString('fr-FR');
-                        bouton.disabled = (n === 0);
+                        bouton.disabled = n === 0;
                     }
-                    for (var i = 0; i < cases.length; i++) cases[i].addEventListener('change', maj);
-                    maj();
+                    for (var i = 0; i < cases.length; i++) cases[i].addEventListener('change', actualiser);
+                    actualiser();
                 })();
             </script>
         <% } %>

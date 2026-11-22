@@ -66,7 +66,7 @@ Depuis la racine du projet, copiez le fichier dans le conteneur :
 `docker cp cinema.sql oracle:/tmp/cinema.sql`
 
 Connectez-vous ensuite à Oracle. Cette commande vous demandera le mot de passe sans l’inscrire dans la commande :
-`docker exec -it oracle sqlplus -L akoho/akoho@//localhost:1521/EE`
+`docker exec -it oracle sqlplus -L akoho/akoho@//localhost:1521/EE.oralce.docker`
 
 Dans SQL*Plus, vérifiez d’abord que vous êtes dans le bon schéma et que les tables cinéma n’existent pas déjà :
 
@@ -80,3 +80,7 @@ Si le schéma est le bon et qu’aucune table CINE_… n’apparaît, lancez le 
 
 À la fin, le script affiche les objets CINE invalides éventuels. Vérifiez aussi les erreurs Oracle avec :
 SELECT NAME, TYPE, LINE, POSITION, TEXT FROM USER_ERRORS WHERE NAME LIKE '%CINE%' ORDER BY NAME, SEQUENCE;
+
+modification en base:
+docker cp cinema-renommage-colonnes.sql oracle:/tmp/cinema-renommage-colonnes.sql
+docker exec -it oracle sqlplus akoho/akoho@//localhost:1521/EE @/tmp/cinema-renommage-colonnes.sql

@@ -1,79 +1,85 @@
-<%@ page pageEncoding="UTF-8" contentType="text/html; charset=UTF-8" %>
-<%@ page import="affichage.PageInsert" %>
-<%@ page import="affichage.Liste" %>
-<%@ page import="paiement.Paiement" %>
-<%@ page import="paiement.ModePaiement" %>
-<%@ page import="user.UserEJB" %>
-<%@ page import="utilitaire.UtilDB" %>
-<%@ page import="java.sql.Connection" %>
-<%@ page import="java.sql.PreparedStatement" %>
-<%@ page import="java.sql.ResultSet" %>
+<%@page import="affichage.Champ"%>
+<%@page import="affichage.Liste"%>
+<%@page import="affichage.PageConsulte"%>
+<%@page import="affichage.PageInsert"%>
+<%@page import="bean.TypeObjet"%>
+<%@page import="caisse.MvtCaisse"%>
+<%@page import="cinema.ReservationLib"%>
+<%@page import="user.UserEJB"%>
+<%@page import="utilitaire.Utilitaire"%>
 <%
+    String erreur = null;
+    PageInsert pageInsert = null;
+    ReservationLib reservation = null;
+    PageConsulte pageConsulte = null;
     try {
-        UserEJB utilisateur = (UserEJB) session.getAttribute("u");
-        String idReservation = request.getParameter("idreservation");
+        UserEJB utilisateur = (UserEJB) session.getValue("u");
+        String idReservation = request.getParameter("id");
+        if (idReservation == null) idReservation = request.getParameter("idreservation");
         if (idReservation == null || idReservation.trim().isEmpty()) {
-            throw new IllegalArgumentException("L'identifiant de la réservation est obligatoire.");
+            throw new IllegalArgumentException("L'identifiant de réservation est obligatoire.");
         }
-        String idVente;
-        double montantVente;
-        try (Connection connexion = new UtilDB().GetConn()) {
-            try (PreparedStatement ps = connexion.prepareStatement(
-                    "SELECT IDVENTE, MONTANT_TOTAL FROM VENTE "
-                    + "WHERE IDRESERVATION = ? AND STATUT = 'BROUILLON'")) {
-                ps.setString(1, idReservation.trim());
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) {
-                        throw new Exception("La vente brouillon de la réservation est introuvable.");
-                    }
-                    idVente = rs.getString("IDVENTE");
-                    montantVente = rs.getDouble("MONTANT_TOTAL");
-                    if (rs.next()) {
-                        throw new Exception("Plusieurs ventes brouillon existent pour cette réservation.");
-                    }
-                }
+
+        ReservationLib critere = new ReservationLib();
+        pageConsulte = new PageConsulte(critere, request, utilisateur);
+        reservation = (ReservationLib) pageConsulte.getBase();
+        if (reservation == null) throw new Exception("La réservation est introuvable.");
+        if (reservation.getEtat() != 1) throw new IllegalArgumentException("Cette réservation n'est plus en attente.");
+        if (reservation.getNbPlaces() <= 0) throw new IllegalArgumentException("Cette réservation ne contient aucune place.");
+        pageConsulte.setTitre("Résumé de la réservation");
+        pageConsulte.getChampByName("idClient").setVisible(false);
+        pageConsulte.getChampByName("idSeance").setVisible(false);
+        pageConsulte.getChampByName("etat").setVisible(false);
+        pageConsulte.getChampByName("idClientLib").setLibelle("Client");
+        pageConsulte.getChampByName("idSeanceLib").setLibelle("Séance");
+        pageConsulte.getChampByName("nbPlaces").setLibelle("Nombre de places");
+        pageConsulte.getChampByName("montantTotal").setLibelle("Montant total à payer");
+
+        MvtCaisse mouvement = new MvtCaisse();
+        pageInsert = new PageInsert(mouvement, request, utilisateur);
+        pageInsert.setLien((String) session.getValue("lien"));
+        Champ[] champs = {new Liste("idModePaiement", new TypeObjet("MODEPAIEMENT"), "val", "id")};
+        pageInsert.getFormu().changerEnChamp(champs);
+        Champ[] tous = pageInsert.getFormu().getListeChamp();
+        for (Champ champ : tous) {
+            String nom = champ.getNom();
+            if (!"idModePaiement".equalsIgnoreCase(nom) && !"credit".equalsIgnoreCase(nom)) {
+                champ.setVisible(false);
             }
         }
-        Paiement paiement = new Paiement();
-        PageInsert pageInsert = new PageInsert(paiement, request, utilisateur);
-        String lien = (String) session.getAttribute("lien");
-        if (lien == null || lien.trim().isEmpty()) {
-            lien = "module.jsp";
-        }
-        pageInsert.setLien(lien);
-        ModePaiement mode = new ModePaiement();
-        mode.setNomTable("MODEPAIEMENT");
-        Liste[] modes = {new Liste("idmodepaiement", mode, "libelle", "idmodepaiement", " AND ACTIF = 1")};
-        pageInsert.getFormu().changerEnChamp(modes);
-        pageInsert.getFormu().getChamp("idvente").setVisible(false);
-        pageInsert.getFormu().getChamp("numero_paiement").setVisible(false);
-        pageInsert.getFormu().getChamp("daty").setVisible(false);
-        pageInsert.getFormu().getChamp("statut").setVisible(false);
-        pageInsert.getFormu().getChamp("montant").setVisible(false);
-        pageInsert.getFormu().getChamp("idmodepaiement").setLibelle("Mode de paiement");
-        pageInsert.getFormu().getChamp("montant").setLibelle("Montant");
-        pageInsert.getFormu().getChamp("reference_externe").setLibelle("Référence externe");
+        pageInsert.getFormu().getChamp("idModePaiement").setLibelle("Mode de paiement");
+        pageInsert.getFormu().getChamp("idModePaiement").setAutre("required");
+        pageInsert.getFormu().getChamp("credit").setLibelle("Montant total à payer");
+        pageInsert.getFormu().getChamp("credit").setDefaut(Utilitaire.formaterAr(reservation.getMontantTotal()));
+        pageInsert.getFormu().getChamp("credit").setAutre("readonly");
+        pageInsert.getFormu().setOrdre(new String[]{"idModePaiement", "credit"});
         pageInsert.preparerDataFormu();
         pageInsert.getFormu().makeHtmlInsertTabIndex();
-%>
-<div class="content-wrapper">
-    <h1 class="box-title">Paiement de la réservation</h1>
-    <div class="box">
-        <div class="box-body">
-            <form action="<%= pageInsert.getLien() %>?but=reservation/apres-paiement.jsp"
-                  method="post" data-parsley-validate>
-                <p class="lead">Montant à payer : <strong><%= montantVente %></strong></p>
-                <%= pageInsert.getFormu().getHtmlInsert() %>
-                <input type="hidden" name="idreservation" value="<%= idReservation %>">
-                <input type="hidden" name="bute" value="reservation/reservation-fiche.jsp">
-                <button type="submit" class="btn btn-primary pull-right">Valider le paiement</button>
-            </form>
-        </div>
-    </div>
-</div>
-<%
     } catch (Exception e) {
-        application.log("Erreur lors de la préparation du paiement.", e);
-%><div class="alert alert-danger"><%= e.getMessage() %></div><%
+        erreur = e.getMessage() == null ? "Impossible de préparer la validation." : e.getMessage();
+        application.log("Erreur lors de la préparation de la validation d'une réservation cinéma.", e);
     }
 %>
+<div class="content-wrapper">
+    <section class="content-header"><h1>Valider la réservation</h1></section>
+    <section class="content">
+        <% if (erreur != null) { %>
+            <div class="alert alert-danger"><%= erreur %></div>
+        <% } else { %>
+            <div class="box box-primary">
+                <div class="box-body">
+                    <%= pageConsulte.getHtml() %>
+                    <form action="<%= pageInsert.getLien() %>?but=cinema/reservation/apres-paiement.jsp" method="post" data-parsley-validate>
+                        <%= pageInsert.getFormu().getHtmlInsert() %>
+                        <input type="hidden" name="idreservation" value="<%= reservation.getId() %>">
+                        <input name="acte" type="hidden" value="valider">
+                        <input name="bute" type="hidden" value="cinema/reservation/reservation-fiche.jsp">
+                        <input name="classe" type="hidden" value="cinema.Reservation">
+                        <input name="nomtable" type="hidden" value="CINE_RESERVATION">
+                        <button type="submit" class="btn btn-success pull-right">Confirmer et encaisser</button>
+                    </form>
+                </div>
+            </div>
+        <% } %>
+    </section>
+</div>

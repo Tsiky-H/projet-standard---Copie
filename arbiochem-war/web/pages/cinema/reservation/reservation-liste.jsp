@@ -1,44 +1,44 @@
 <%@ page pageEncoding="UTF-8" contentType="text/html; charset=UTF-8" %>
 <%@ page import="affichage.PageRecherche" %>
-<%@ page import="reservation.ReservationLib" %>
+<%@ page import="cinema.ReservationLib" %>
 <%
     try {
         ReservationLib objet = new ReservationLib();
-        String[] entetes = {"idreservation", "idclientlib", "idmodepaiement_prevulib", "seanceslib",
-                "date_reservation", "date_expiration", "statut", "nb_places_total", "montant_total"};
+        String[] criteres = {"idclientlib", "idseancelib", "typeLib"};
+        String[] entetes = {"id", "idclientlib", "idseancelib", "filmlib", "sallelib",
+                "dateReservation", "dateExpiration", "etat", "typeLib", "nbPlaces",
+                "montantBrut", "montantRemise", "montantTotal"};
         PageRecherche pageRecherche = new PageRecherche(
-                objet, request, entetes, null, entetes.length, entetes, entetes.length);
+                objet, request, criteres, null, 3, entetes, entetes.length);
+        pageRecherche.setTitre("Liste des réservations cinéma");
         pageRecherche.setUtilisateur((user.UserEJB) session.getAttribute("u"));
         pageRecherche.setLien((String) session.getAttribute("lien"));
-        pageRecherche.setApres("reservation/reservation-liste.jsp");
+        pageRecherche.setApres("cinema/reservation/reservation-liste.jsp");
         pageRecherche.creerObjetPage(entetes, null);
-        pageRecherche.getFormu().getChamp("idreservation").setLibelle("Réservation");
-        pageRecherche.getFormu().getChamp("idclientlib").setLibelle("Client");
-        pageRecherche.getFormu().getChamp("idmodepaiement_prevulib").setLibelle("Mode de paiement prévu");
-        pageRecherche.getFormu().getChamp("seanceslib").setLibelle("Séances");
-        pageRecherche.getFormu().getChamp("statut").setLibelle("Statut");
+        String[] lienTableau = {pageRecherche.getLien() + "?but=cinema/reservation/reservation-fiche.jsp"};
+        pageRecherche.getTableau().setLien(lienTableau);
+        pageRecherche.getTableau().setColonneLien(new String[]{"id"});
         pageRecherche.getTableau().setLibelleAffiche(new String[]{
-                "Réservation", "Client", "Mode de paiement prévu", "Séances", "Date", "Expiration",
-                "Statut", "Places", "Montant"});
-        pageRecherche.getTableau().setLien(new String[]{pageRecherche.getLien() + "?but=reservation/reservation-fiche.jsp"});
-        pageRecherche.getTableau().setColonneLien(new String[]{"idreservation"});
+                "Réservation", "Client", "Séance", "Film", "Salle", "Date de réservation",
+                "Expiration", "État", "Type", "Places", "Montant brut", "Remise", "Total"});
 %>
 <div class="content-wrapper">
-    <section class="content-header"><h1>Liste des r&eacute;servations</h1></section>
+    <section class="content-header"><h1><%= pageRecherche.getTitre() %></h1></section>
     <section class="content">
-        <form action="<%=pageRecherche.getLien()%>?but=reservation/reservation-liste.jsp" method="post">
-            <%=pageRecherche.getFormu().getHtmlEnsemble()%>
+        <p><a class="btn btn-primary" href="<%= pageRecherche.getLien() %>?but=cinema/reservation/reservation-saisie.jsp">Nouvelle réservation</a></p>
+        <form action="<%= pageRecherche.getLien() %>?but=<%= pageRecherche.getApres() %>" method="post">
+            <%= pageRecherche.getFormu().getHtmlEnsemble() %>
         </form>
-        <%=pageRecherche.getTableauRecap().getHtml()%>
-        <%=pageRecherche.getTableau().getHtml()%>
-        <%=pageRecherche.getBasPage()%>
+        <%= pageRecherche.getTableauRecap().getHtml() %><br>
+        <%= pageRecherche.getTableau().getHtml() %>
+        <%= pageRecherche.getBasPage() %>
     </section>
 </div>
 <%
     } catch (Exception e) {
-        application.log("Erreur lors de l'affichage de la liste des réservations.", e);
+        application.log("Erreur lors de l'affichage de la liste des réservations cinéma.", e);
 %>
-<div class="alert alert-danger"><%=e.getMessage()%></div>
+<div class="alert alert-danger">Impossible de charger la liste des réservations.</div>
 <%
     }
 %>
