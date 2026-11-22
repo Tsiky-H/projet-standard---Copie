@@ -1,0 +1,584 @@
+-- =====================================================================
+-- SCHEMA CINEMA - a executer dans le schema du projet de reference (Oracle)
+-- Tables : CINE_FILM, CINE_SALLE, CINE_CATEGORIE_PLACE, CINE_PLACE,
+--          CINE_SEANCE, CINE_RESERVATION, CINE_RESERVATION_FILLE, CINE_REMISE
+-- Reutilise la table CLIENT existante (colonnes ID et NOM).
+-- Reservation : ETAT APJ -> 1 = en attente, 11 = validee, 0 = annulee.
+-- Achat direct : meme table, DATEEXPIRATION nulle.
+-- Fichier sans accents (compatible NLS_LANG quelconque).
+-- =====================================================================
+SET SQLBLANKLINES ON
+SET DEFINE OFF
+SET SERVEROUTPUT ON
+
+-- ---------------------------------------------------------------------
+-- 1. SEQUENCES ET FONCTIONS getSeq... (utilisees par preparePk)
+--    Prefixes d'identifiants verifies libres dans la reference :
+--    CFLM, CSAL, CCAT, CPLA, CSEA, CRES, CRSF, CRMS
+-- ---------------------------------------------------------------------
+CREATE SEQUENCE SEQ_CINE_FILM START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_SALLE START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_CATEGORIE_PLACE START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_PLACE START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_SEANCE START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_RESERVATION START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_RESERVATION_FILLE START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_CINE_REMISE START WITH 1 INCREMENT BY 1 NOCACHE;
+
+CREATE OR REPLACE FUNCTION getSeqCineFilm RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_FILM.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineSalle RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_SALLE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineCategoriePlace RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_CATEGORIE_PLACE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCinePlace RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_PLACE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineSeance RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_SEANCE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineReservation RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_RESERVATION.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineReservationFille RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_RESERVATION_FILLE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+CREATE OR REPLACE FUNCTION getSeqCineRemise RETURN NUMBER IS
+    retour NUMBER;
+BEGIN
+    SELECT SEQ_CINE_REMISE.NEXTVAL INTO retour FROM DUAL;
+    RETURN retour;
+END;
+/
+
+-- ---------------------------------------------------------------------
+-- 2. TABLES
+-- ---------------------------------------------------------------------
+CREATE TABLE CINE_FILM (
+    ID              VARCHAR2(50)  NOT NULL,
+    TITRE           VARCHAR2(200) NOT NULL,
+    REALISATEUR     VARCHAR2(150),
+    DUREE           NUMBER(4)     NOT NULL,
+    GENRE           VARCHAR2(80),
+    CLASSIFICATION  NUMBER(2)     DEFAULT 0 NOT NULL,
+    CONSTRAINT PK_CINE_FILM PRIMARY KEY (ID),
+    CONSTRAINT CK_CINE_FILM_DUREE CHECK (DUREE > 0),
+    CONSTRAINT CK_CINE_FILM_CLASSIF CHECK (CLASSIFICATION >= 0)
+);
+
+CREATE TABLE CINE_SALLE (
+    ID        VARCHAR2(50)  NOT NULL,
+    LIBELLE   VARCHAR2(100) NOT NULL,
+    CONSTRAINT PK_CINE_SALLE PRIMARY KEY (ID),
+    CONSTRAINT UK_CINE_SALLE_LIBELLE UNIQUE (LIBELLE)
+);
+
+CREATE TABLE CINE_CATEGORIE_PLACE (
+    ID    VARCHAR2(50)  NOT NULL,
+    VAL   VARCHAR2(100) NOT NULL,
+    PRIX  NUMBER(14,2)  NOT NULL,
+    CONSTRAINT PK_CINE_CATEGORIE_PLACE PRIMARY KEY (ID),
+    CONSTRAINT UK_CINE_CATEGORIE_VAL UNIQUE (VAL),
+    CONSTRAINT CK_CINE_CATEGORIE_PRIX CHECK (PRIX >= 0)
+);
+
+CREATE TABLE CINE_PLACE (
+    ID           VARCHAR2(50) NOT NULL,
+    IDSALLE      VARCHAR2(50) NOT NULL,
+    IDCATEGORIE  VARCHAR2(50) NOT NULL,
+    NUMERO       VARCHAR2(20) NOT NULL,
+    CONSTRAINT PK_CINE_PLACE PRIMARY KEY (ID),
+    CONSTRAINT UK_CINE_PLACE_SALLE_NUMERO UNIQUE (IDSALLE, NUMERO),
+    CONSTRAINT FK_CINE_PLACE_SALLE FOREIGN KEY (IDSALLE) REFERENCES CINE_SALLE (ID),
+    CONSTRAINT FK_CINE_PLACE_CATEGORIE FOREIGN KEY (IDCATEGORIE) REFERENCES CINE_CATEGORIE_PLACE (ID)
+);
+
+CREATE TABLE CINE_SEANCE (
+    ID               VARCHAR2(50) NOT NULL,
+    IDFILM           VARCHAR2(50) NOT NULL,
+    IDSALLE          VARCHAR2(50) NOT NULL,
+    DATEHEUREDEBUT   TIMESTAMP    NOT NULL,
+    DATEHEUREFIN     TIMESTAMP    NOT NULL,
+    ETAT             NUMBER(2)    DEFAULT 1 NOT NULL,
+    CONSTRAINT PK_CINE_SEANCE PRIMARY KEY (ID),
+    CONSTRAINT FK_CINE_SEANCE_FILM FOREIGN KEY (IDFILM) REFERENCES CINE_FILM (ID),
+    CONSTRAINT FK_CINE_SEANCE_SALLE FOREIGN KEY (IDSALLE) REFERENCES CINE_SALLE (ID),
+    CONSTRAINT CK_CINE_SEANCE_DATES CHECK (DATEHEUREFIN > DATEHEUREDEBUT)
+);
+
+-- ETAT : 1 = en attente, 11 = validee (payee), 0 = annulee (client ou expiration)
+-- DATEEXPIRATION nulle = achat direct (non annulable)
+CREATE TABLE CINE_RESERVATION (
+    ID               VARCHAR2(50) NOT NULL,
+    IDCLIENT         VARCHAR2(50) NOT NULL,
+    IDSEANCE         VARCHAR2(50) NOT NULL,
+    DATERESERVATION  TIMESTAMP    NOT NULL,
+    DATEEXPIRATION   TIMESTAMP,
+    ETAT             NUMBER(2)    DEFAULT 1 NOT NULL,
+    CONSTRAINT PK_CINE_RESERVATION PRIMARY KEY (ID),
+    CONSTRAINT UK_CINE_RES_ID_SEANCE UNIQUE (ID, IDSEANCE),
+    CONSTRAINT FK_CINE_RES_CLIENT FOREIGN KEY (IDCLIENT) REFERENCES CLIENT (ID),
+    CONSTRAINT FK_CINE_RES_SEANCE FOREIGN KEY (IDSEANCE) REFERENCES CINE_SEANCE (ID),
+    CONSTRAINT CK_CINE_RES_ETAT CHECK (ETAT IN (0, 1, 11)),
+    CONSTRAINT CK_CINE_RES_EXPIRATION CHECK (DATEEXPIRATION IS NULL OR DATEEXPIRATION > DATERESERVATION)
+);
+
+-- Une ligne par place choisie. ACTIF=0 conserve l'historique sans bloquer la place.
+CREATE TABLE CINE_RESERVATION_FILLE (
+    ID              VARCHAR2(50)  NOT NULL,
+    IDRESERVATION   VARCHAR2(50)  NOT NULL,
+    IDSEANCE        VARCHAR2(50)  NOT NULL,
+    IDPLACE         VARCHAR2(50)  NOT NULL,
+    PRIX_UNITAIRE   NUMBER(14,2)  NOT NULL,
+    MONTANT_REMISE  NUMBER(14,2)  DEFAULT 0 NOT NULL,
+    ACTIF           NUMBER(1)     DEFAULT 1 NOT NULL,
+    CONSTRAINT PK_CINE_RESERVATION_FILLE PRIMARY KEY (ID),
+    CONSTRAINT FK_CINE_RF_RESERVATION FOREIGN KEY (IDRESERVATION, IDSEANCE)
+        REFERENCES CINE_RESERVATION (ID, IDSEANCE),
+    CONSTRAINT FK_CINE_RF_PLACE FOREIGN KEY (IDPLACE) REFERENCES CINE_PLACE (ID),
+    CONSTRAINT CK_CINE_RF_PRIX CHECK (PRIX_UNITAIRE >= 0),
+    CONSTRAINT CK_CINE_RF_REMISE CHECK (MONTANT_REMISE >= 0 AND MONTANT_REMISE <= PRIX_UNITAIRE),
+    CONSTRAINT CK_CINE_RF_ACTIF CHECK (ACTIF IN (0, 1))
+);
+
+-- Une place ne peut avoir qu'une seule reservation active pour une seance.
+CREATE UNIQUE INDEX UK_CINE_RF_SEANCE_PLACE ON CINE_RESERVATION_FILLE (
+    CASE WHEN ACTIF = 1 THEN IDSEANCE END,
+    CASE WHEN ACTIF = 1 THEN IDPLACE END
+);
+
+-- Une seule place remisee par reservation (remise non cumulable)
+CREATE UNIQUE INDEX UK_CINE_RF_UNE_REMISE ON CINE_RESERVATION_FILLE (
+    CASE WHEN MONTANT_REMISE > 0 THEN IDRESERVATION END
+);
+
+-- Remise : acheter NB_PLACES places de CAT_RESERVE donne VAL % sur une place de CAT_REMISE
+CREATE TABLE CINE_REMISE (
+    ID           VARCHAR2(50) NOT NULL,
+    CAT_RESERVE  VARCHAR2(50) NOT NULL,
+    NB_PLACES    NUMBER(3)    NOT NULL,
+    CAT_REMISE   VARCHAR2(50) NOT NULL,
+    VAL          NUMBER(5,2)  NOT NULL,
+    CONSTRAINT PK_CINE_REMISE PRIMARY KEY (ID),
+    CONSTRAINT FK_CINE_REMISE_RESERVE FOREIGN KEY (CAT_RESERVE) REFERENCES CINE_CATEGORIE_PLACE (ID),
+    CONSTRAINT FK_CINE_REMISE_REMISE FOREIGN KEY (CAT_REMISE) REFERENCES CINE_CATEGORIE_PLACE (ID),
+    CONSTRAINT CK_CINE_REMISE_NB CHECK (NB_PLACES >= 1),
+    CONSTRAINT CK_CINE_REMISE_VAL CHECK (VAL > 0 AND VAL <= 100)
+);
+
+-- ---------------------------------------------------------------------
+-- 3. INDEX SUR LES CLES ETRANGERES ET LES RECHERCHES FREQUENTES
+-- ---------------------------------------------------------------------
+CREATE INDEX IX_CINE_PLACE_CATEGORIE ON CINE_PLACE (IDCATEGORIE);
+CREATE INDEX IX_CINE_SEANCE_FILM ON CINE_SEANCE (IDFILM);
+CREATE INDEX IX_CINE_SEANCE_SALLE_DEBUT ON CINE_SEANCE (IDSALLE, DATEHEUREDEBUT);
+CREATE INDEX IX_CINE_RES_CLIENT ON CINE_RESERVATION (IDCLIENT);
+CREATE INDEX IX_CINE_RES_SEANCE ON CINE_RESERVATION (IDSEANCE);
+CREATE INDEX IX_CINE_RES_ETAT_EXP ON CINE_RESERVATION (ETAT, DATEEXPIRATION);
+CREATE INDEX IX_CINE_RF_RESERVATION ON CINE_RESERVATION_FILLE (IDRESERVATION);
+CREATE INDEX IX_CINE_RF_PLACE ON CINE_RESERVATION_FILLE (IDPLACE);
+CREATE INDEX IX_CINE_REMISE_RESERVE ON CINE_REMISE (CAT_RESERVE);
+CREATE INDEX IX_CINE_REMISE_REMISE ON CINE_REMISE (CAT_REMISE);
+
+-- ---------------------------------------------------------------------
+-- 4. VUES DE LECTURE (classes ...Lib du framework)
+--    Colonnes de base conservees + colonnes lisibles (suffixe LIB)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW CINE_SALLE_LIB AS
+SELECT s.ID, s.LIBELLE, NVL(p.NB, 0) AS CAPACITE
+FROM CINE_SALLE s
+LEFT JOIN (SELECT IDSALLE, COUNT(*) AS NB FROM CINE_PLACE GROUP BY IDSALLE) p
+       ON p.IDSALLE = s.ID;
+
+CREATE OR REPLACE VIEW CINE_PLACE_LIB AS
+SELECT p.ID, p.IDSALLE, p.IDCATEGORIE, p.NUMERO,
+       s.LIBELLE AS IDSALLELIB,
+       c.VAL     AS IDCATEGORIELIB,
+       c.PRIX    AS PRIX
+FROM CINE_PLACE p
+JOIN CINE_SALLE s ON s.ID = p.IDSALLE
+JOIN CINE_CATEGORIE_PLACE c ON c.ID = p.IDCATEGORIE;
+
+-- LIBELLE : texte unique pour les listes deroulantes (film - salle - debut)
+CREATE OR REPLACE VIEW CINE_SEANCE_LIB AS
+SELECT se.ID, se.IDFILM, se.IDSALLE, se.DATEHEUREDEBUT, se.DATEHEUREFIN, se.ETAT,
+       f.TITRE    AS IDFILMLIB,
+       sa.LIBELLE AS IDSALLELIB,
+       f.TITRE || ' - ' || sa.LIBELLE || ' - ' || TO_CHAR(se.DATEHEUREDEBUT, 'DD/MM/YYYY HH24:MI') AS LIBELLE,
+       NVL(np.NB, 0) AS NB_PLACES,
+       NVL(pr.NB, 0) AS PLACES_PRISES,
+       NVL(np.NB, 0) - NVL(pr.NB, 0) AS PLACES_RESTANTES
+FROM CINE_SEANCE se
+JOIN CINE_FILM f ON f.ID = se.IDFILM
+JOIN CINE_SALLE sa ON sa.ID = se.IDSALLE
+LEFT JOIN (SELECT IDSALLE, COUNT(*) AS NB FROM CINE_PLACE GROUP BY IDSALLE) np
+       ON np.IDSALLE = se.IDSALLE
+LEFT JOIN (SELECT IDSEANCE, COUNT(*) AS NB FROM CINE_RESERVATION_FILLE WHERE ACTIF = 1 GROUP BY IDSEANCE) pr
+       ON pr.IDSEANCE = se.ID;
+
+-- Disponibilite de chaque place : seules les lignes actives occupent une place.
+CREATE OR REPLACE VIEW CINE_PLACE_SEANCE_DISPO AS
+SELECT se.ID || ':' || p.ID AS ID,
+       se.ID AS IDSEANCE,
+       p.ID  AS IDPLACE,
+       p.IDSALLE,
+       p.IDCATEGORIE,
+       p.NUMERO,
+       c.VAL  AS IDCATEGORIELIB,
+       c.PRIX AS PRIX,
+       CASE WHEN f.ID IS NULL THEN 1 ELSE 0 END AS DISPONIBLE
+FROM CINE_SEANCE se
+JOIN CINE_PLACE p ON p.IDSALLE = se.IDSALLE
+JOIN CINE_CATEGORIE_PLACE c ON c.ID = p.IDCATEGORIE
+LEFT JOIN CINE_RESERVATION_FILLE f ON f.IDSEANCE = se.ID AND f.IDPLACE = p.ID AND f.ACTIF = 1;
+
+CREATE OR REPLACE VIEW CINE_REMISE_LIB AS
+SELECT r.ID, r.CAT_RESERVE, r.NB_PLACES, r.CAT_REMISE, r.VAL,
+       c1.VAL AS CAT_RESERVELIB,
+       c2.VAL AS CAT_REMISELIB
+FROM CINE_REMISE r
+JOIN CINE_CATEGORIE_PLACE c1 ON c1.ID = r.CAT_RESERVE
+JOIN CINE_CATEGORIE_PLACE c2 ON c2.ID = r.CAT_REMISE;
+
+CREATE OR REPLACE VIEW CINE_RESERVATION_FILLE_LIB AS
+SELECT f.ID, f.IDRESERVATION, f.IDSEANCE, f.IDPLACE, f.PRIX_UNITAIRE, f.MONTANT_REMISE, f.ACTIF,
+       p.NUMERO AS IDPLACELIB,
+       c.VAL    AS IDCATEGORIELIB,
+       f.PRIX_UNITAIRE - f.MONTANT_REMISE AS MONTANT_NET
+FROM CINE_RESERVATION_FILLE f
+JOIN CINE_PLACE p ON p.ID = f.IDPLACE
+JOIN CINE_CATEGORIE_PLACE c ON c.ID = p.IDCATEGORIE;
+
+-- Les lignes restent presentes apres annulation : historique et montants conserves.
+CREATE OR REPLACE VIEW CINE_RESERVATION_LIB AS
+SELECT r.ID, r.IDCLIENT, r.IDSEANCE, r.DATERESERVATION, r.DATEEXPIRATION, r.ETAT,
+       c.NOM AS IDCLIENTLIB,
+       se.LIBELLE AS IDSEANCELIB,
+       se.IDFILMLIB AS FILMLIB,
+       se.IDSALLELIB AS SALLELIB,
+       se.DATEHEUREDEBUT AS SEANCE_DEBUT,
+       se.DATEHEUREFIN   AS SEANCE_FIN,
+       NVL(t.NB, 0)     AS NB_PLACES,
+       NVL(t.BRUT, 0)   AS MONTANT_BRUT,
+       NVL(t.REMISE, 0) AS MONTANT_REMISE,
+       NVL(t.BRUT, 0) - NVL(t.REMISE, 0) AS MONTANT_TOTAL,
+       CASE WHEN r.DATEEXPIRATION IS NULL THEN 'ACHAT DIRECT' ELSE 'RESERVATION' END AS TYPELIB
+FROM CINE_RESERVATION r
+JOIN CLIENT c ON c.ID = r.IDCLIENT
+JOIN CINE_SEANCE_LIB se ON se.ID = r.IDSEANCE
+LEFT JOIN (SELECT IDRESERVATION,
+                  COUNT(*) AS NB,
+                  SUM(PRIX_UNITAIRE) AS BRUT,
+                  SUM(MONTANT_REMISE) AS REMISE
+           FROM CINE_RESERVATION_FILLE
+           GROUP BY IDRESERVATION) t
+       ON t.IDRESERVATION = r.ID;
+
+-- ---------------------------------------------------------------------
+-- 5. TRIGGERS (integrite qui ne depend pas de l'heure courante)
+--    Les regles "seance deja commencee" restent dans le service Java :
+--    une seule horloge (celle du serveur d'application).
+-- ---------------------------------------------------------------------
+
+-- 5.1 Deux seances ne peuvent pas se chevaucher dans la meme salle
+--     (trigger compose : la verification se fait apres l'instruction,
+--      ce qui evite l'erreur "table en mutation")
+CREATE OR REPLACE TRIGGER TRG_CINE_SEANCE_CHEVAUCHEMENT
+FOR INSERT OR UPDATE OF IDSALLE, DATEHEUREDEBUT, DATEHEUREFIN ON CINE_SEANCE
+COMPOUND TRIGGER
+    TYPE t_ids IS TABLE OF CINE_SEANCE.ID%TYPE;
+    g_ids t_ids := t_ids();
+
+    AFTER EACH ROW IS
+    BEGIN
+        g_ids.EXTEND;
+        g_ids(g_ids.COUNT) := :NEW.ID;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_nb NUMBER;
+    BEGIN
+        FOR i IN 1 .. g_ids.COUNT LOOP
+            SELECT COUNT(*) INTO v_nb
+            FROM CINE_SEANCE a
+            JOIN CINE_SEANCE b
+              ON b.IDSALLE = a.IDSALLE
+             AND b.ID <> a.ID
+             AND b.DATEHEUREDEBUT < a.DATEHEUREFIN
+             AND a.DATEHEUREDEBUT < b.DATEHEUREFIN
+            WHERE a.ID = g_ids(i);
+            IF v_nb > 0 THEN
+                g_ids.DELETE;
+                RAISE_APPLICATION_ERROR(-20101, 'Cette salle a deja une seance sur ce creneau.');
+            END IF;
+        END LOOP;
+        g_ids.DELETE;
+    END AFTER STATEMENT;
+END TRG_CINE_SEANCE_CHEVAUCHEMENT;
+/
+
+-- 5.2 Reservation : valeurs par defaut et expiration <= debut de la seance
+CREATE OR REPLACE TRIGGER TRG_CINE_RESERVATION_BI
+BEFORE INSERT ON CINE_RESERVATION
+FOR EACH ROW
+DECLARE
+    v_debut CINE_SEANCE.DATEHEUREDEBUT%TYPE;
+BEGIN
+    IF :NEW.DATERESERVATION IS NULL THEN
+        :NEW.DATERESERVATION := LOCALTIMESTAMP;
+    END IF;
+    IF :NEW.ETAT IS NULL THEN
+        :NEW.ETAT := 1;
+    END IF;
+    IF :NEW.DATEEXPIRATION IS NOT NULL THEN
+        BEGIN
+            SELECT DATEHEUREDEBUT INTO v_debut FROM CINE_SEANCE WHERE ID = :NEW.IDSEANCE;
+            IF :NEW.DATEEXPIRATION > v_debut THEN
+                RAISE_APPLICATION_ERROR(-20110,
+                    'La date d''expiration ne peut pas depasser le debut de la seance.');
+            END IF;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                NULL; -- seance inconnue : la cle etrangere signalera l'erreur
+        END;
+    END IF;
+END;
+/
+
+-- Liberer les places quand une reservation passe a l'etat annule.
+CREATE OR REPLACE TRIGGER TRG_CINE_RESERVATION_LIBERER
+AFTER UPDATE OF ETAT ON CINE_RESERVATION
+FOR EACH ROW
+WHEN (NEW.ETAT = 0 AND OLD.ETAT <> 0)
+BEGIN
+    UPDATE CINE_RESERVATION_FILLE
+       SET ACTIF = 0
+     WHERE IDRESERVATION = :NEW.ID AND ACTIF = 1;
+END;
+/
+
+-- 5.3 Reservation : regles sur les changements d'etat
+--     - validee : ni annulable ni modifiable
+--     - annulee : non reactivable
+--     - achat direct (pas d'expiration) : non annulable
+CREATE OR REPLACE TRIGGER TRG_CINE_RESERVATION_BU
+BEFORE UPDATE ON CINE_RESERVATION
+FOR EACH ROW
+BEGIN
+    IF :OLD.ETAT = 11 AND :NEW.ETAT <> 11 THEN
+        RAISE_APPLICATION_ERROR(-20120, 'Une reservation validee ne peut pas etre annulee.');
+    END IF;
+
+    IF :OLD.ETAT = 0 AND :NEW.ETAT <> 0 THEN
+        RAISE_APPLICATION_ERROR(-20121, 'Une reservation annulee ne peut pas etre reactivee.');
+    END IF;
+
+    IF :NEW.ETAT = 0 AND :OLD.ETAT <> 0 AND :OLD.DATEEXPIRATION IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20122, 'Un achat direct ne peut pas etre annule.');
+    END IF;
+
+    IF :OLD.ETAT IN (0, 11)
+       AND (
+           NVL(:NEW.IDSEANCE, '#NULL#') <> NVL(:OLD.IDSEANCE, '#NULL#')
+           OR NVL(:NEW.IDCLIENT, '#NULL#') <> NVL(:OLD.IDCLIENT, '#NULL#')
+           OR NVL(:NEW.DATEEXPIRATION, TIMESTAMP '1900-01-01 00:00:00')
+              <> NVL(:OLD.DATEEXPIRATION, TIMESTAMP '1900-01-01 00:00:00')
+       ) THEN
+        RAISE_APPLICATION_ERROR(-20123, 'Cette reservation n''est plus modifiable.');
+    END IF;
+END;
+/
+
+-- 5.4 Une reservation conservee avec ses lignes ne peut pas etre supprimee
+CREATE OR REPLACE TRIGGER TRG_CINE_RESERVATION_BD
+BEFORE DELETE ON CINE_RESERVATION
+FOR EACH ROW
+DECLARE
+    v_nb NUMBER;
+BEGIN
+    IF :OLD.ETAT = 11 THEN
+        RAISE_APPLICATION_ERROR(-20124, 'Une reservation validee ne peut pas etre supprimee.');
+    END IF;
+    SELECT COUNT(*) INTO v_nb FROM CINE_RESERVATION_FILLE WHERE IDRESERVATION = :OLD.ID;
+    IF v_nb > 0 THEN
+        RAISE_APPLICATION_ERROR(-20125, 'Une reservation avec des places conservees ne peut pas etre supprimee.');
+    END IF;
+END;
+/
+
+-- 5.5 Ligne de reservation : seance recopiee de la reservation, place de la salle
+--     de la seance, prix copie depuis la categorie (le tarif peut changer ensuite),
+--     ajout possible seulement tant que la reservation est en attente
+CREATE OR REPLACE TRIGGER TRG_CINE_RES_FILLE_BI
+BEFORE INSERT ON CINE_RESERVATION_FILLE
+FOR EACH ROW
+DECLARE
+    v_etat         CINE_RESERVATION.ETAT%TYPE;
+    v_seance       CINE_RESERVATION.IDSEANCE%TYPE;
+    v_salle_seance CINE_SEANCE.IDSALLE%TYPE;
+    v_salle_place  CINE_PLACE.IDSALLE%TYPE;
+    v_prix         CINE_CATEGORIE_PLACE.PRIX%TYPE;
+BEGIN
+    SELECT ETAT, IDSEANCE INTO v_etat, v_seance
+    FROM CINE_RESERVATION WHERE ID = :NEW.IDRESERVATION;
+    IF v_etat <> 1 THEN
+        RAISE_APPLICATION_ERROR(-20130,
+            'Des places ne peuvent etre ajoutees qu''a une reservation en attente.');
+    END IF;
+    IF :NEW.IDSEANCE IS NULL THEN
+        :NEW.IDSEANCE := v_seance;
+    END IF;
+    SELECT IDSALLE INTO v_salle_seance FROM CINE_SEANCE WHERE ID = :NEW.IDSEANCE;
+    SELECT p.IDSALLE, c.PRIX INTO v_salle_place, v_prix
+    FROM CINE_PLACE p
+    JOIN CINE_CATEGORIE_PLACE c ON c.ID = p.IDCATEGORIE
+    WHERE p.ID = :NEW.IDPLACE;
+    IF v_salle_place <> v_salle_seance THEN
+        RAISE_APPLICATION_ERROR(-20131, 'Cette place n''appartient pas a la salle de la seance.');
+    END IF;
+    IF :NEW.PRIX_UNITAIRE IS NULL THEN
+        :NEW.PRIX_UNITAIRE := v_prix;
+    END IF;
+    IF :NEW.MONTANT_REMISE IS NULL THEN
+        :NEW.MONTANT_REMISE := 0;
+    END IF;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20132, 'Reservation, seance ou place introuvable.');
+END;
+/
+
+-- ---------------------------------------------------------------------
+-- 6. EXPIRATION AUTOMATIQUE : annulation et liberation des places.
+--    Les lignes sont conservees pour l'historique ; le trigger les desactive.
+--    La procedure ne fait pas de COMMIT : le service Java peut l'appeler
+--    dans sa transaction avant de verifier la disponibilite des places.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE CINE_LIBERER_EXPIREES IS
+BEGIN
+    FOR r IN (SELECT ID
+              FROM CINE_RESERVATION
+              WHERE ETAT = 1
+                AND DATEEXPIRATION IS NOT NULL
+                AND DATEEXPIRATION <= LOCALTIMESTAMP
+              FOR UPDATE SKIP LOCKED) LOOP
+        UPDATE CINE_RESERVATION SET ETAT = 0 WHERE ID = r.ID;
+    END LOOP;
+END;
+/
+
+-- Tache planifiee : toutes les minutes. Necessite le privilege CREATE JOB ;
+-- sinon le script continue et le service Java appellera la procedure lui-meme.
+BEGIN
+    DBMS_SCHEDULER.CREATE_JOB(
+        job_name        => 'CINE_JOB_LIBERER_EXPIREES',
+        job_type        => 'PLSQL_BLOCK',
+        job_action      => 'BEGIN CINE_LIBERER_EXPIREES; COMMIT; END;',
+        start_date      => SYSTIMESTAMP,
+        repeat_interval => 'FREQ=MINUTELY;INTERVAL=1',
+        enabled         => TRUE,
+        comments        => 'Annule les reservations expirees et libere leurs places');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Job non cree (privilege CREATE JOB ?) : ' || SQLERRM);
+END;
+/
+
+-- ---------------------------------------------------------------------
+-- 7. VERIFICATION : doit renvoyer 0 ligne
+-- ---------------------------------------------------------------------
+SELECT OBJECT_NAME, OBJECT_TYPE, STATUS
+FROM USER_OBJECTS
+WHERE OBJECT_NAME LIKE '%CINE%' AND STATUS <> 'VALID';
+
+
+INSERT INTO POINT (ID, VAL, DESCE, ACTIF) VALUES('PNT_CINEMA','Point cinema','Point dedie aux operations du cinema',1);
+
+INSERT INTO MAGASIN2 (ID, VAL, DESCE, IDPOINT, IDTYPEMAGASIN, ACTIF) VALUES('MAG_CINEMA','Magasin cinema','Magasin dedie aux ventes de billets cinema','PNT_CINEMA','TYPMG000002',1);
+
+INSERT INTO AS_INGREDIENTS (ID, LIBELLE, LIBELLEVENTE, UNITE, PV, ACTIF, COMPOSE,CATEGORIEINGREDIENT, ISVENTE, ISACHAT, COMPTE_VENTE, TVA,IDMAGASIN, TYPESTOCK) VALUES('CINE_BILLET','Billet de cinema','Billet de cinema','UNT00010',0,1,0,'CATINGSERVICE',1,0,'706',0,'MAG_CINEMA',NULL);
+
+INSERT INTO CAISSE (ID, VAL, DESCE, IDTYPECAISSE, IDPOINT, IDMAGASIN,COMPTE, IDDEVISE, ETAT, ACTIF) VALUES('CAI_CINEMA','Caisse cinema','Caisse physique dediee au cinema','TCA003','PNT_CINEMA','MAG_CINEMA','530000','AR',1,1);
+
+COMMIT;
+-- ---------------------------------------------------------------------
+-- 8. ANNULATION COMPLETE (a decommenter pour tout supprimer)
+-- ---------------------------------------------------------------------
+-- BEGIN DBMS_SCHEDULER.DROP_JOB('CINE_JOB_LIBERER_EXPIREES', TRUE); EXCEPTION WHEN OTHERS THEN NULL; END;
+-- /
+-- DROP PROCEDURE CINE_LIBERER_EXPIREES;
+-- DROP TRIGGER TRG_CINE_RES_FILLE_BI;
+-- DROP TRIGGER TRG_CINE_RESERVATION_LIBERER;
+-- DROP TRIGGER TRG_CINE_RESERVATION_BD;
+-- DROP TRIGGER TRG_CINE_RESERVATION_BU;
+-- DROP TRIGGER TRG_CINE_RESERVATION_BI;
+-- DROP TRIGGER TRG_CINE_SEANCE_CHEVAUCHEMENT;
+-- DROP VIEW CINE_RESERVATION_LIB;
+-- DROP VIEW CINE_RESERVATION_FILLE_LIB;
+-- DROP VIEW CINE_REMISE_LIB;
+-- DROP VIEW CINE_PLACE_SEANCE_DISPO;
+-- DROP VIEW CINE_SEANCE_LIB;
+-- DROP VIEW CINE_PLACE_LIB;
+-- DROP VIEW CINE_SALLE_LIB;
+-- DROP TABLE CINE_REMISE;
+-- DROP TABLE CINE_RESERVATION_FILLE;
+-- DROP TABLE CINE_RESERVATION;
+-- DROP TABLE CINE_SEANCE;
+-- DROP TABLE CINE_PLACE;
+-- DROP TABLE CINE_CATEGORIE_PLACE;
+-- DROP TABLE CINE_SALLE;
+-- DROP TABLE CINE_FILM;
+-- DROP FUNCTION getSeqCineRemise;
+-- DROP FUNCTION getSeqCineReservationFille;
+-- DROP FUNCTION getSeqCineReservation;
+-- DROP FUNCTION getSeqCineSeance;
+-- DROP FUNCTION getSeqCinePlace;
+-- DROP FUNCTION getSeqCineCategoriePlace;
+-- DROP FUNCTION getSeqCineSalle;
+-- DROP FUNCTION getSeqCineFilm;
+-- DROP SEQUENCE SEQ_CINE_REMISE;
+-- DROP SEQUENCE SEQ_CINE_RESERVATION_FILLE;
+-- DROP SEQUENCE SEQ_CINE_RESERVATION;
+-- DROP SEQUENCE SEQ_CINE_SEANCE;
+-- DROP SEQUENCE SEQ_CINE_PLACE;
+-- DROP SEQUENCE SEQ_CINE_CATEGORIE_PLACE;
+-- DROP SEQUENCE SEQ_CINE_SALLE;
+-- DROP SEQUENCE SEQ_CINE_FILM;

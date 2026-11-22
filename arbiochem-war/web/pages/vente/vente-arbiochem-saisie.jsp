@@ -19,10 +19,15 @@
 <%@ page import="java.util.Date" %>
 <%@ page import="produits.TarifIngredients" %>
 <%@ page import="magasin.Magasin" %>
+<%@ page import="vente.VenteArbiochem" %>
+<%@ page import="utilitaire.UtilDB" %>
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%
+    
     boolean carteExpiree = false;
+    double soldeAvoir = 0.0;
     try {
+        
         UserEJB u = null;
         u = (UserEJB) session.getValue("u");
         String nomtable = "Vente_Details";
@@ -189,6 +194,12 @@
                 //awhere += " AND TARIFMAGASIN IS NULL";
             }
             affichage.Champ.setPageAppelCompleteAWhere(pi.getFormufle().getChampFille("idProduit"),"produits.IngreventVenteTarif","id","AS_INGREDIENT_VENTE_LIB","prixunitaire;compte_vente;libelle;idunite;idunitelib;tva;calorie","pu;compte;designation;unite;unitelib;tva;calorie", awhere);
+            
+            VenteArbiochem vente = new VenteArbiochem();
+        
+            Connection co = null;
+            soldeAvoir = vente.getSoldeAvoirClient(co, request.getParameter("idClientlibelle").split(" - ")[0]);
+            
         }else{
             session.removeAttribute("idMagasin");
             session.removeAttribute("idclient");
@@ -353,7 +364,9 @@
                     </script>
                     <%
                         out.println(pi.getFormufle().getHtmlTableauInsert());
+                        out.println("Solde avoir du client: " + soldeAvoir);
                     %>
+                    
                 </div>
 
             <input name="acte" type="hidden" id="nature" value="insert">

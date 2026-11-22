@@ -32,6 +32,10 @@ public class VenteArbiochem extends Vente{
         return "vente.VenteDetailsArbiochem";
     }
 
+    // public VenteArbiochem() {
+    //     super();
+    // }
+
     public VenteLib[] getVenteParCliAvecReste(Connection c) throws Exception {
         VenteLib[] liste = null;
 
@@ -56,7 +60,30 @@ public class VenteArbiochem extends Vente{
         throw new Exception("Le client n'existe pas");
     }
 
+    public double getSoldeAvoirClient(Connection c, String idClient) throws Exception{
+        boolean estOuvert = false;
+        double soldeAvoir = 0;
+        if(c==null){
+            c = new UtilDB().GetConn();
+            estOuvert = true;
+        }
+        try{
+        AvoirFCLib t = new AvoirFCLib();
+        t.setNomTable("AVOIRFCLIB_CPL");
+        AvoirFCLib[] details = (AvoirFCLib[]) CGenUtil.rechercher(t,null,null,c," AND idClient='"+idClient+"' and resteapayerar > 0 order by id asc");
+        if(details.length>0){
+            for(int i=0;i<details.length;i++){
+                soldeAvoir += details[i].getResteapayerar();
+            }
+        }} catch (Exception e) {
+            throw e ;
+        } finally {
+            if(estOuvert) c.close();
+        }
 
+        return soldeAvoir;
+    }
+    
     public LiaisonPaiement genererPaiementFactureParAvoirAutom(String u, Connection c,VenteLib vente) throws SQLException, Exception{
         LiaisonPaiement pFacture = null;
         boolean estOuvert = false;
